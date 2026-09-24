@@ -62,6 +62,18 @@ model_policy.scrub_blocked_keys()
 logger = logging.getLogger(__name__)
 
 
+def question_timeline(question: MetaculusQuestion) -> str:
+    """Close and resolution dates for the prompt, so the model can size the time left."""
+    parts = []
+    if question.close_time:
+        parts.append(f"Forecasting on this question closes {question.close_time.strftime('%Y-%m-%d')}.")
+    if question.scheduled_resolution_time:
+        parts.append(
+            f"It is scheduled to resolve {question.scheduled_resolution_time.strftime('%Y-%m-%d')}."
+        )
+    return " ".join(parts)
+
+
 class SummerTemplateBot2026(ForecastBot):
     """
     This is the template bot for Summer 2026 Metaculus AI Tournament.
@@ -240,6 +252,7 @@ class SummerTemplateBot2026(ForecastBot):
             {research}
 
             Today is {datetime.now().strftime("%Y-%m-%d")}.
+            {question_timeline(question)}
 
             Before answering you write:
             (a) The time left until the outcome to the question is known.
@@ -303,6 +316,7 @@ class SummerTemplateBot2026(ForecastBot):
             {research}
 
             Today is {datetime.now().strftime("%Y-%m-%d")}.
+            {question_timeline(question)}
 
             Before answering you write:
             (a) The time left until the outcome to the question is known.
@@ -380,6 +394,7 @@ class SummerTemplateBot2026(ForecastBot):
             {research}
 
             Today is {datetime.now().strftime("%Y-%m-%d")}.
+            {question_timeline(question)}
 
             {lower_bound_message}
             {upper_bound_message}
@@ -472,6 +487,7 @@ class SummerTemplateBot2026(ForecastBot):
             {research}
 
             Today is {datetime.now().strftime("%Y-%m-%d")}.
+            {question_timeline(question)}
 
             {lower_bound_message}
             {upper_bound_message}

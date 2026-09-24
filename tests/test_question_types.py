@@ -29,6 +29,8 @@ for _key in ("ASKNEWS_CLIENT_ID", "ASKNEWS_SECRET", "ASKNEWS_API_KEY"):
 import main  # noqa: E402
 import model_policy  # noqa: E402
 from forecasting_tools import (  # noqa: E402
+    BinaryPrediction,
+    BinaryQuestion,
     BinaryReport,
     DatePercentile,
     DateQuestion,
@@ -56,6 +58,15 @@ def _mc_question():
         resolution_criteria="Per the NHC tropical cyclone reports.",
         background_info="Offline test fixture. Not a Metaculus question.",
         page_url="local://mc1",
+    )
+
+
+def _binary_question():
+    return BinaryQuestion(
+        question_text="Will a named Atlantic hurricane make US landfall in October 2026?",
+        resolution_criteria="Per the NHC tropical cyclone reports.",
+        background_info="Offline test fixture. Not a Metaculus question.",
+        page_url="local://b1",
     )
 
 
@@ -113,8 +124,10 @@ class _Stubs:
         self.mc_probs = mc_probs
         self.percentiles = percentiles
         self.parsed_types = []
+        self.prompts = []
 
         async def invoke(llm_self, prompt, *args, **kwargs):
+            self.prompts.append(prompt)
             return "Stub reasoning for a dry run."
 
         self.invoke = invoke
@@ -124,6 +137,8 @@ class _Stubs:
         # multiple choice, so accept both.
         output_type = kwargs["output_type"] if "output_type" in kwargs else args[1]
         self.parsed_types.append(output_type)
+        if output_type is BinaryPrediction:
+            return BinaryPrediction(prediction_in_decimal=0.4)
         if output_type is PredictedOptionList:
             return PredictedOptionList(
                 predicted_options=[
@@ -240,6 +255,37 @@ class DateAndDiscreteRunTest(unittest.TestCase):
         self.assertNotIsInstance(report, BaseException, repr(report))
         self.assertIsInstance(report, DiscreteReport)
         self.assertEqual(stubs.parsed_types.count(list[Percentile]), 3)
+
+
+
+class QuestionTimelineTest(unittest.TestCase):
+    """The forecast prompt asks for the time left, so it must carry the close
+    and resolution dates. The live 9/24 run showed the model saying the close
+    date was not provided."""
+
+    def test_close_and_resolution_dates_reach_every_forecast_prompt(self):
+        questions = [_binary_question(), _mc_question(), _numeric_question(), _date_question()]
+        for q in questions:
+            q.close_time = datetime(2026, 10, 9, tzinfo=timezone.utc)
+            q.scheduled_resolution_time = datetime(2026, 12, 31, tzinfo=timezone.utc)
+        stubs, reports = _run(questions)
+        forecast_prompts = [p for p in stubs.prompts if "Today is" in p]
+        # 4 questions x 3 predictions each
+        self.assertEqual(len(forecast_prompts), 12)
+        for p in forecast_prompts:
+            self.assertIn("closes 2026-10-09", p)
+            self.assertIn("resolve 2026-12-31", p)
+
+    def test_missing_dates_leave_no_placeholder_text(self):
+        q = _mc_question()
+        q.close_time = None
+        q.scheduled_resolution_time = None
+        self.assertEqual(main.question_timeline(q), "")
+        stubs, reports = _run([q])
+        for p in stubs.prompts:
+            self.assertNotIn("closes None", p)
+            self.assertNotIn("Forecasting on this question closes", p)
+            self.assertNotIn("scheduled to resolve", p)
 
 
 if __name__ == "__main__":

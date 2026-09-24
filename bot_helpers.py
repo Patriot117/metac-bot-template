@@ -68,14 +68,13 @@ def check_environment(strict: bool = True) -> None:
             "Get one at https://www.metaculus.com/futureeval/participate/"
         )
 
-    has_llm_key = any(
-        _is_real_env(k)
-        for k in ("OPENROUTER_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY")
-    )
-    if not has_llm_key:
+    # Only OpenRouter counts: model_policy strips OpenAI/Anthropic keys at startup,
+    # and there is no automatic fallback to the Metaculus proxy.
+    if not _is_real_env("OPENROUTER_API_KEY"):
         print(
-            "⚠️  No LLM key set (OPENROUTER/OPENAI/ANTHROPIC). The bot will fall back\n"
-            "    to the Metaculus LLM proxy. Free OpenRouter credits: "
+            "⚠️  No OPENROUTER_API_KEY set. The bot's models are OpenRouter models, so\n"
+            "    every forecast will fail unless the BOT_*_MODEL settings point at\n"
+            "    metaculus/ proxy models. Free OpenRouter credits: "
             "https://forms.gle/aQdYMq9Pisrf1v7d8\n"
         )
 

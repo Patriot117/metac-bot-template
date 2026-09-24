@@ -24,7 +24,7 @@ The easiest way to use this repo is to fork it, paste in two API keys, and click
 1) **Fork the repository** — go to the [repository](https://github.com/Metaculus/metac-bot-template) and click **Fork** in the top right.
 2) **Add your two API keys as repository secrets** — in your fork, go to `Settings → Secrets and variables → Actions → New repository secret`. Add these two (names must match exactly, all caps):
    - **`METACULUS_TOKEN`** — create one at https://www.metaculus.com/futureeval/participate/ (see the [resources page](https://www.metaculus.com/notebooks/38928/ai-benchmark-resources/#creating-your-bot-account-and-metaculus-token) if you get stuck).
-   - **`OPENROUTER_API_KEY`** — get free credits via [this form](https://forms.gle/aQdYMq9Pisrf1v7d8), or make your own key on [OpenRouter](https://openrouter.ai/). You can also use `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `PERPLEXITY_API_KEY`, `ASKNEWS_SECRET`, etc. — these all work out of the box if you set them.
+   - **`OPENROUTER_API_KEY`** — get free credits via [this form](https://forms.gle/aQdYMq9Pisrf1v7d8), or make your own key on [OpenRouter](https://openrouter.ai/). Optionally add `ASKNEWS_CLIENT_ID` and `ASKNEWS_SECRET` for news research. `main.py`, which the workflows run, does not use OpenAI or Anthropic keys: `model_policy.py` removes them at startup and the workflows do not pass them.
 3) **Enable Actions** — click the `Actions` tab, then click `I understand my workflows, go ahead and enable them`.
 4) **Run the test workflow to confirm everything works** — go to `Actions → Test Bot → Run workflow → Run workflow` (green button). This forecasts on whatever's currently open in the [bot-testing-area tournament](https://www.metaculus.com/tournament/bot-testing-area/) so you can verify your setup posts forecasts to Metaculus end-to-end. Once the run finishes (~3–5 min), check your bot's profile on Metaculus to confirm the forecasts landed.
 5) **You're done!** The `Forecast on new AI tournament questions` workflow is already enabled and will run every 20 minutes, picking up any new tournament questions and skipping ones it has already forecast on.
@@ -49,7 +49,7 @@ To run a different script under the same workflows, edit the `poetry run python 
 - `run_bot_on_tournament.yaml` — every 20 min on the live AIB tournament + MiniBench.
 - `run_bot_on_metaculus_cup.yaml` — every 2 days on the Metaculus Cup.
 
-**To run `main_with_no_framework.py` via GitHub Actions instead of `main.py`:** open the workflow file you want and change `poetry run python main.py` to `poetry run python main_with_no_framework.py`. That's the only change required.
+**To run `main_with_no_framework.py` via GitHub Actions instead of `main.py`:** swapping the command is not enough. That script calls OpenAI directly and stops at startup without `OPENAI_API_KEY`, and the workflows here deliberately do not pass that key (`tests/test_workflows.py` checks this). You would have to change `poetry run python main.py` to `poetry run python main_with_no_framework.py`, add `OPENAI_API_KEY` as a repository secret, add it to that workflow's `env:` block, and update the test.
 
 ## Editing in GitHub UI
 Remember that you can edit a bot non locally by clicking on a file in Github, and then clicking the 'Edit this file' button. Whether you develop locally or not, when making edits, attempt to do things that you think others have not tried, as this will help further innovation in the field more than doing something that has already been done. Feel free to ask about what has or has not been tried in the Discord, see [other bot's self-descriptions](https://www.metaculus.com/notebooks/38928/ai-benchmark-resources/#what-are-other-bots-doing), or read bot's [open source code](https://www.metaculus.com/notebooks/38928/ai-benchmark-resources/#open-source-bots).
@@ -91,23 +91,25 @@ Copy the template and fill in your real keys:
 ```bash
 cp .env.template .env
 ```
-Then open `.env` in any text editor and replace each `REPLACE_ME` with your real key. At minimum you need `METACULUS_TOKEN` and one LLM key (`OPENROUTER_API_KEY` is recommended). See the comments inside `.env.template` for where to get each one.
+Then open `.env` in any text editor and replace each `REPLACE_ME` with your real key. `main.py` needs at least `METACULUS_TOKEN` and `OPENROUTER_API_KEY` (its models are OpenRouter models, and it removes OpenAI and Anthropic keys at startup, including ones in `.env`). `main_with_no_framework.py` is different: it needs `METACULUS_TOKEN` and `OPENAI_API_KEY`, calls OpenAI directly, and does not read `OPENROUTER_API_KEY`. See the comments inside `.env.template` for where to get each one.
 
 ### 5. Run the bot
+`main.py` is a dry run unless you pass `--publish`: it researches and forecasts but submits nothing. The GitHub workflows all pass `--publish`.
+
 **First run — smoke-test against the [bot-testing-area tournament](https://www.metaculus.com/tournament/bot-testing-area/):**
 ```bash
-poetry run python main.py --mode test_questions
+poetry run python main.py --mode test_questions --publish
 ```
-You'll see a one-line startup banner, forecasting progress logs, then a `🎉 Bot submitted N forecast(s)` banner with direct links to each forecast on Metaculus.
+You'll see a one-line startup banner, forecasting progress logs, then a `🎉 Bot submitted N forecast(s)` banner with direct links to each forecast on Metaculus. Leave off `--publish` to see the forecasts without submitting them.
 
 **Forecast on live AIB tournament + MiniBench:**
 ```bash
-poetry run python main.py --mode tournament
+poetry run python main.py --mode tournament --publish
 ```
 
 **Forecast on the Metaculus Cup:**
 ```bash
-poetry run python main.py --mode metaculus_cup
+poetry run python main.py --mode metaculus_cup --publish
 ```
 
 **Run the no-framework reference implementation instead:**
@@ -117,7 +119,7 @@ poetry run python main_with_no_framework.py
 This file has no `--mode` flag; it's controlled by the constants at the top of the file (`SUBMIT_PREDICTION`, `USE_EXAMPLE_QUESTIONS`, `TOURNAMENT_ID`, etc.). Flip `USE_EXAMPLE_QUESTIONS = True` to point it at the bot-testing-area tournament instead of the live AIB.
 
 To stop publishing forecasts (dry-run mode):
-- `main.py`: set `publish_reports_to_metaculus=False` in the `SummerTemplateBot2026(...)` constructor near the bottom.
+- `main.py`: run it without `--publish` (the default).
 - `main_with_no_framework.py`: set `SUBMIT_PREDICTION = False` at the top.
 
 ## Reviewing how your bot did

@@ -171,3 +171,6 @@ cython_debug/
 
 # MacOS
 .DS_Store
+
+# Stray stub left by a local uv venv build; poetry.lock is the real lock.
+uv.lock

@@ -1,0 +1,20 @@
+[
+  {
+    "question_text": "Will the US Federal Reserve lower the federal funds target range at its first FOMC meeting held after September 23, 2026?",
+    "resolution_criteria": "Resolves Yes if the FOMC statement from the first scheduled or unscheduled meeting that concludes after September 23, 2026 announces a lower target range for the federal funds rate than the range in effect on September 23, 2026. Resolves No otherwise.",
+    "fine_print": "The Federal Reserve's official statement is the resolution source.",
+    "background_info": "Dry-run fixture for local testing. Not a Metaculus question."
+  },
+  {
+    "question_text": "Will the price of Bitcoin be above $100,000 USD at 23:59 UTC on December 31, 2026?",
+    "resolution_criteria": "Resolves Yes if the BTC/USD price on Coinbase at 23:59 UTC on December 31, 2026 is above $100,000. Resolves No otherwise.",
+    "fine_print": "If Coinbase is unavailable, the CoinGecko BTC/USD reference price at the same time is used.",
+    "background_info": "Dry-run fixture for local testing. Not a Metaculus question."
+  },
+  {
+    "question_text": "Will the S&P 500 index close higher on December 31, 2026 than it closed on September 30, 2026?",
+    "resolution_criteria": "Resolves Yes if the official S&P 500 closing value on the last trading day of 2026 is strictly greater than its official closing value on September 30, 2026. Resolves No otherwise.",
+    "fine_print": "S&P Dow Jones Indices official closing values are the resolution source.",
+    "background_info": "Dry-run fixture for local testing. Not a Metaculus question."
+  }
+]

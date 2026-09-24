@@ -1,10 +1,24 @@
 import argparse
 import asyncio
 import logging
+import os
 from datetime import datetime, timezone
 from typing import Literal
 
 import dotenv
+
+# Model allow-list. Load .env first, then scrub the OpenAI/Anthropic keys before
+# forecasting-tools or litellm is imported, so nothing they read while loading
+# can route spend to those providers. Loading .env after the scrub would put the
+# keys back, so the load, the scrub, and the LITELLM_MODE line stay in this order
+# and above every import below. litellm reloads .env while it loads unless
+# LITELLM_MODE is PRODUCTION (the only thing that setting changes outside
+# litellm's proxy server), so it is set here.
+dotenv.load_dotenv()
+import model_policy
+
+model_policy.scrub_blocked_keys()
+os.environ["LITELLM_MODE"] = "PRODUCTION"
 
 # Runtime helpers (env validation, banners, dependency-warning suppression).
 from bot_helpers import (
@@ -41,7 +55,10 @@ from forecasting_tools import (
     structure_output,
 )
 
-dotenv.load_dotenv()
+# Second pass in case a library sets the keys while it loads some other way
+# (a future .env reload, or writing os.environ directly).
+model_policy.scrub_blocked_keys()
+
 logger = logging.getLogger(__name__)
 
 
@@ -68,6 +85,10 @@ class SummerTemplateBot2026(ForecastBot):
         - Aggregate the predictions
         - Submit prediction (if publish_reports_to_metaculus is True)
     - Return a list of ForecastReport objects
+
+    Local changes: every model is pinned through model_policy (allow-listed
+    prefixes only, checked at construction), and publishing is off unless the
+    script is run with --publish.
 
     Alternatively, you can use the MetaculusClient to make a custom filter of questions to forecast on
     and forecast them with `bot.forecast_questions(questions)`
@@ -128,6 +149,18 @@ class SummerTemplateBot2026(ForecastBot):
     )
     _concurrency_limiter = asyncio.Semaphore(_max_concurrent_questions)
     _structure_output_validation_samples = 2
+
+    @classmethod
+    def _llm_config_defaults(cls) -> dict[str, str | GeneralLlm | None]:
+        # The library's defaults follow whichever API keys are set and prefer
+        # OpenAI/Anthropic; ours come only from the allow-listed pins.
+        return model_policy.pinned_llms()
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        # Checked after the parent fills any missing purpose from the defaults,
+        # so a model passed in through llms= cannot slip past either.
+        model_policy.assert_allowed(self._llms)
 
     ##################################### RESEARCH #####################################
 
@@ -646,12 +679,7 @@ class SummerTemplateBot2026(ForecastBot):
         )
 
 
-if __name__ == "__main__":
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    )
-
+def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run the template forecasting bot")
     parser.add_argument(
         "--mode",
@@ -660,43 +688,64 @@ if __name__ == "__main__":
         default="tournament",
         help="What to forecast on (default: tournament)",
     )
-    args = parser.parse_args()
+    parser.add_argument(
+        "--publish",
+        action="store_true",
+        help="Submit forecasts and comments to Metaculus. Off by default: without "
+        "this flag the bot forecasts and prints, and nothing is sent.",
+    )
+    parser.add_argument(
+        "--local-questions",
+        metavar="PATH",
+        help="Forecast binary questions from a local JSON file instead of Metaculus "
+        "(dry run: never publishes, no METACULUS_TOKEN needed).",
+    )
+    parser.add_argument(
+        "--save-reports",
+        metavar="DIR",
+        default=None,
+        help="Also write each forecast report (prediction + explanation) as JSON here.",
+    )
+    return parser
+
+
+if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    )
+
+    args = build_arg_parser().parse_args()
     run_mode: Literal["tournament", "metaculus_cup", "test_questions"] = args.mode
 
-    check_environment(strict=True)
-    publish_to_metaculus = True
-    print_startup_banner(run_mode, will_publish=publish_to_metaculus)
+    if args.local_questions:
+        publish_to_metaculus = False
+        print_startup_banner(f"local:{args.local_questions}", will_publish=False)
+    else:
+        check_environment(strict=True)
+        publish_to_metaculus = args.publish
+        print_startup_banner(run_mode, will_publish=publish_to_metaculus)
 
-    # Configure the bot. The `llms=` block below is commented out to use
-    # whichever default models forecasting-tools picks based on your env vars;
-    # uncomment and edit to pin specific models.
+    # Models come from model_policy (allow-listed, env-overridable); the bot
+    # refuses to start if any purpose resolves outside the allow-list.
     template_bot = SummerTemplateBot2026(
         research_reports_per_question=1,
         predictions_per_research_report=5,
         use_research_summary_to_forecast=False,
         publish_reports_to_metaculus=publish_to_metaculus,
-        folder_to_save_reports_to=None,
+        folder_to_save_reports_to=args.save_reports,
         skip_previously_forecasted_questions=True,
         extra_metadata_in_explanation=True,
-        # llms={
-        #     "default": GeneralLlm(
-        #         model="openrouter/openai/gpt-4o",
-        #         temperature=0.3,
-        #         timeout=40,
-        #         allowed_tries=2,
-        #     ),
-        #     "summarizer": "openai/gpt-4o-mini",
-        #     "researcher": "asknews/news-summaries",
-        #     "parser": "openai/gpt-4o-mini",
-        # },
+        llms=model_policy.pinned_llms(),
     )
+    logger.info(f"Models: {model_policy.pinned_model_names()}")
 
-    # Per-mode tournament URL shown in the summary banner footer. These
-    # piggyback on the forecasting_tools SDK constants and need updating
-    # whenever those rotate seasons.
+    # Per-mode URL shown in the summary banner footer. The Fall 2026 tournament
+    # page slug is unverified (metaculus.com blocks scripted fetches), so the
+    # tournament entry points at the bot resources page, which links it.
     TOURNAMENT_URLS = {
-        "tournament": "https://www.metaculus.com/tournament/summer-futureeval-2026/",
-        "metaculus_cup": "https://www.metaculus.com/tournament/metaculus-cup-summer-2025/",
+        "tournament": "https://www.metaculus.com/notebooks/38928/bot-tournament-resources-page/",
+        "metaculus_cup": "https://www.metaculus.com/tournaments/",
         "test_questions": "https://www.metaculus.com/tournament/bot-testing-area/",
     }
 
@@ -704,7 +753,16 @@ if __name__ == "__main__":
     # exceptions, since return_exceptions=True) which then flows into the
     # summary printers below.
     client = MetaculusClient()
-    if run_mode == "tournament":
+    if args.local_questions:
+        from local_questions import load_local_questions
+
+        template_bot.skip_previously_forecasted_questions = False
+        forecast_reports = asyncio.run(
+            template_bot.forecast_questions(
+                load_local_questions(args.local_questions), return_exceptions=True
+            )
+        )
+    elif run_mode == "tournament":
         seasonal_tournament_reports = asyncio.run(
             template_bot.forecast_on_tournament(
                 client.CURRENT_AI_COMPETITION_ID, return_exceptions=True
@@ -741,5 +799,5 @@ if __name__ == "__main__":
     print_run_summary_banner(
         forecast_reports,
         will_publish=publish_to_metaculus,
-        tournament_url=TOURNAMENT_URLS.get(run_mode),
+        tournament_url=None if args.local_questions else TOURNAMENT_URLS.get(run_mode),
     )

@@ -4,6 +4,7 @@ on:
   workflow_dispatch:
   schedule:
     - cron: "7,27,47 * * * *" # every 20 min, offset off the hour. Make sure to skip already-forecasted questions!
+    # Schedule registered on the fork 2026-09-24 (a commit touching this file wakes the timer).
 
 # Add concurrency group to prevent parallel runs
 concurrency:
